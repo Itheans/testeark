@@ -60,6 +60,7 @@ class _FindSitterScreenState extends State<FindSitterScreen> {
         final sitters = await _sitterService.findNearestSitters(
           latitude: _currentPosition!.latitude,
           longitude: _currentPosition!.longitude,
+          date: DateTime.now(), // Add the missing date parameter
         );
         setState(() {
           _sitters = sitters;

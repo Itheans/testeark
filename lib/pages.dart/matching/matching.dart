@@ -4,7 +4,8 @@ import 'dart:math';
 class SitterService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  Future<List<Map<String, dynamic>>> findAllSitters() async {
+  Future<List<Map<String, dynamic>>> findAllSitters(
+      {required DateTime date}) async {
     try {
       QuerySnapshot sitterSnapshot = await _firestore
           .collection('users')
@@ -14,7 +15,10 @@ class SitterService {
       List<Map<String, dynamic>> sitters = [];
 
       for (var doc in sitterSnapshot.docs) {
-        // ดึงข้อมูล location
+        // ตรวจสอบการว่างในวันที่เลือก
+        bool isAvailable = await _checkAvailability(doc.id, date);
+        if (!isAvailable) continue;
+
         var locationData = await _getLocationData(doc.id);
 
         sitters.add({
@@ -30,6 +34,44 @@ class SitterService {
       return sitters;
     } catch (e) {
       throw Exception('ไม่สามารถดึงข้อมูลผู้รับเลี้ยงแมวได้: $e');
+    }
+  }
+
+  Future<bool> _checkAvailability(String sitterId, DateTime date) async {
+    try {
+      // แปลง DateTime เป็นวันที่อย่างเดียว (ไม่มีเวลา)
+      DateTime dateOnly = DateTime(date.year, date.month, date.day);
+
+      DocumentSnapshot userDoc =
+          await _firestore.collection('users').doc(sitterId).get();
+
+      // ตรวจสอบว่ามีฟิลด์ availableDates และมีข้อมูล
+      if (userDoc.exists && userDoc.data() != null) {
+        Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
+
+        if (userData.containsKey('availableDates')) {
+          List<dynamic> availableDates = userData['availableDates'];
+
+          // ตรวจสอบว่าวันที่ที่ต้องการอยู่ในรายการวันที่ว่างหรือไม่
+          for (var availableDate in availableDates) {
+            // แปลง Timestamp เป็น DateTime
+            if (availableDate is Timestamp) {
+              DateTime available = availableDate.toDate();
+              // เปรียบเทียบเฉพาะวันที่ (ไม่รวมเวลา)
+              if (available.year == dateOnly.year &&
+                  available.month == dateOnly.month &&
+                  available.day == dateOnly.day) {
+                return true;
+              }
+            }
+          }
+        }
+      }
+
+      return false;
+    } catch (e) {
+      print('Error checking availability: $e');
+      return false;
     }
   }
 
@@ -60,9 +102,10 @@ class SitterService {
   Future<List<Map<String, dynamic>>> findNearestSitters({
     required double latitude,
     required double longitude,
+    required DateTime date,
     double radiusInKm = 10,
   }) async {
-    List<Map<String, dynamic>> allSitters = await findAllSitters();
+    List<Map<String, dynamic>> allSitters = await findAllSitters(date: date);
     List<Map<String, dynamic>> nearestSitters = [];
 
     for (var sitter in allSitters) {
